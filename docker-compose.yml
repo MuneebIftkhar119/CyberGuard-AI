@@ -1,0 +1,45 @@
+# Whole stack on one machine (your laptop or any VPS):
+#   cp .env.example .env   # then edit it
+#   docker compose up --build
+# Open http://localhost:8080
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cyberguard
+      POSTGRES_USER: cyberguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyberguard}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cyberguard -d cyberguard"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      DEBUG: "False"
+      DATABASE_URL: postgresql://cyberguard:${POSTGRES_PASSWORD:-cyberguard}@db:5432/cyberguard
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
+      # nginx serves plain HTTP here; put HTTPS in front (Caddy/Cloudflare) on a real server.
+      SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-False}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
